@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import fdicdata as fdic
 import io
+import plotly.graph_objects as go
 from datetime import datetime
 
 
@@ -125,6 +126,166 @@ def get_final_data(CERT_NO, start_date):
     return final_data
 
 
+def sba_data_2020_present():
+    df = pd.read_csv('https://data.sba.gov/dataset/0ff8e8e9-b967-4f4e-987c-6ac78c575087/resource/3e4231a6-fd69-409f-ac4a-62b7b7592d84/download/foia-7afy2020-present-asof_231231.csv',encoding='ISO-8859-1')
+    return df 
+
+def sba_data_2019():
+    df = pd.read_csv('https://data.sba.gov/dataset/0ff8e8e9-b967-4f4e-987c-6ac78c575087/resource/40e6d1ef-5853-4bf6-866d-79d91722e2e1/download/foia-7afy2010-fy2019-asof-231231.csv',encoding='ISO-8859-1')
+    df_2019 = df[df['ApprovalFiscalYear'] == 2019]
+    return df_2019
+
+def sba_past_5_years_data():
+    df1 = sba_data_2020_present()
+    df2 = sba_data_2019()
+    combined_data = pd.concat([df2, df1], ignore_index=True)
+    return combined_data
+
+def sba_cleaning():
+    combined_data1 = sba_past_5_years_data()
+    combined_data1['GrossApproval'] = combined_data1['GrossApproval'].fillna(0).astype(int)
+    combined_data1['SBAGuaranteedApproval'] = combined_data1['SBAGuaranteedApproval'].fillna(0).astype(int)
+    return combined_data1
+
+def generate_complete_bank_details(cert_no_again, bank_name):
+
+    combined_data1 = sba_cleaning()
+    
+    bank_data = combined_data1[combined_data1['BankFDICNumber'] == cert_no_again]
+
+    if bank_data.empty:
+        
+            bank_data = combined_data1[combined_data1['BankName'] == bank_name]
+            bank_name = bank_data['BankName'].iloc[0]
+
+            yearly_data = bank_data.groupby('ApprovalFiscalYear').agg({
+                'GrossApproval': ['sum', 'count', 'mean', 'median']
+            }).reset_index()
+
+
+            yearly_data.columns = ['Year', 'TotalLoanVolume', 'LoanCount', 'AverageLoanSize', 'MedianLoanSize']
+
+
+            yearly_data['PercentUnder500K'] = bank_data.groupby('ApprovalFiscalYear')['GrossApproval'].apply(
+                lambda x: (x < 500000).sum() / len(x) * 100
+            ).values
+
+            yearly_data['PercentUnder100K'] = bank_data.groupby('ApprovalFiscalYear')['GrossApproval'].apply(
+                lambda x: (x < 100000).sum() / len(x) * 100
+            ).values
+
+
+            fig_loan_volume = go.Figure(data=[
+                go.Bar(x=yearly_data['Year'], y=yearly_data['TotalLoanVolume'], name='Total Loan Volume')
+            ])
+            fig_loan_volume.update_layout(title_text=f'Total Loan Volume for {bank_name}', xaxis_title='Year', yaxis_title='Total Loan Volume')
+
+            fig_loan_count = go.Figure(data=[
+                go.Bar(x=yearly_data['Year'], y=yearly_data['LoanCount'], name='Loan Count')
+            ])
+            fig_loan_count.update_layout(title_text=f'Loan Count for {bank_name}', xaxis_title='Year', yaxis_title='Loan Count')
+
+            fig_avg_loan_size = go.Figure(data=[
+                go.Scatter(x=yearly_data['Year'], y=yearly_data['AverageLoanSize'], name='Average Loan Size', mode='lines+markers')
+            ])
+            fig_avg_loan_size.update_layout(title_text=f'Average Loan Size for {bank_name}', xaxis_title='Year', yaxis_title='Average Loan Size')
+
+            fig_median_loan_size = go.Figure(data=[
+                go.Scatter(x=yearly_data['Year'], y=yearly_data['MedianLoanSize'], name='Median Loan Size', mode='lines+markers')
+            ])
+            fig_median_loan_size.update_layout(title_text=f'Median Loan Size for {bank_name}', xaxis_title='Year', yaxis_title='Median Loan Size')
+
+
+            return {
+                'bank_name': bank_name,
+                'stats_table': yearly_data.to_dict('records'),
+                'fig_total_loan_volume': fig_loan_volume,
+                'fig_loan_count': fig_loan_count,
+                'fig_avg_loan_size': fig_avg_loan_size,
+                'fig_median_loan_size': fig_median_loan_size }
+        
+    
+    else:
+        
+            bank_name = bank_data['BankName'].iloc[0]
+
+            yearly_data = bank_data.groupby('ApprovalFiscalYear').agg({
+                'GrossApproval': ['sum', 'count', 'mean', 'median']
+            }).reset_index()
+
+
+            yearly_data.columns = ['Year', 'TotalLoanVolume', 'LoanCount', 'AverageLoanSize', 'MedianLoanSize']
+
+
+            yearly_data['PercentUnder500K'] = bank_data.groupby('ApprovalFiscalYear')['GrossApproval'].apply(
+                lambda x: (x < 500000).sum() / len(x) * 100
+            ).values
+
+            yearly_data['PercentUnder100K'] = bank_data.groupby('ApprovalFiscalYear')['GrossApproval'].apply(
+                lambda x: (x < 100000).sum() / len(x) * 100
+            ).values
+
+
+            fig_loan_volume = go.Figure(data=[
+                go.Bar(x=yearly_data['Year'], y=yearly_data['TotalLoanVolume'], name='Total Loan Volume')
+            ])
+            fig_loan_volume.update_layout(title_text=f'Total Loan Volume for {bank_name} (FDIC {cert_no_again})', xaxis_title='Year', yaxis_title='Total Loan Volume')
+
+            fig_loan_count = go.Figure(data=[
+                go.Bar(x=yearly_data['Year'], y=yearly_data['LoanCount'], name='Loan Count')
+            ])
+            fig_loan_count.update_layout(title_text=f'Loan Count for {bank_name} (FDIC {cert_no_again})', xaxis_title='Year', yaxis_title='Loan Count')
+
+            fig_avg_loan_size = go.Figure(data=[
+                go.Scatter(x=yearly_data['Year'], y=yearly_data['AverageLoanSize'], name='Average Loan Size', mode='lines+markers')
+            ])
+            fig_avg_loan_size.update_layout(title_text=f'Average Loan Size for {bank_name} (FDIC {cert_no_again})', xaxis_title='Year', yaxis_title='Average Loan Size')
+
+            fig_median_loan_size = go.Figure(data=[
+                go.Scatter(x=yearly_data['Year'], y=yearly_data['MedianLoanSize'], name='Median Loan Size', mode='lines+markers')
+            ])
+            fig_median_loan_size.update_layout(title_text=f'Median Loan Size for {bank_name} (FDIC {cert_no_again})', xaxis_title='Year', yaxis_title='Median Loan Size')
+
+
+            return {
+                'bank_name': bank_name,
+                'stats_table': yearly_data.to_dict('records'),
+                'fig_total_loan_volume': fig_loan_volume,
+                'fig_loan_count': fig_loan_count,
+                'fig_avg_loan_size': fig_avg_loan_size,
+                'fig_median_loan_size': fig_median_loan_size
+            }
+    
+def fig_total_loan_volume(cert_no_again, bank_name):
+        
+        bank_details = generate_complete_bank_details(cert_no_again, bank_name)          
+        return bank_details['fig_total_loan_volume'].show()
+
+def fig_loan_count(cert_no_again, bank_name):
+        bank_details = generate_complete_bank_details(cert_no_again, bank_name) 
+        return bank_details['fig_loan_count'].show()
+
+
+def fig_avg_loan_size(cert_no_again, bank_name):
+        bank_details = generate_complete_bank_details(cert_no_again, bank_name) 
+        return bank_details['fig_avg_loan_size'].show()
+
+
+def fig_median_loan_size(cert_no_again, bank_name):
+        bank_details = generate_complete_bank_details(cert_no_again, bank_name) 
+        return bank_details['fig_median_loan_size'].show()
+        
+
+def sba_statistics(cert_no_again, bank_name):
+
+    stats_table = generate_complete_bank_details(cert_no_again, bank_name)
+    stats_df = pd.DataFrame(stats_table)
+    stats_df = stats_df.round(2)
+    
+    return stats_df
+                     
+
+
 def main():
 
 
@@ -210,6 +371,29 @@ def display_data():
         filtered_data = st.session_state['financial_data'][st.session_state['financial_data']['Quarter'] == selected_quarter]
         transposed_data = filtered_data.transpose()
         st.table(transposed_data)
+        
+        bank_name = st.text_input("Please enter the bank name as provided above:", key="bank_name")
+        cert_no_again = st.session_state['basic_info']['RSS ID']  # Assuming the certificate number is stored here
+        
+        if bank_name and cert_no_again:
+            fetch_sba_details = st.button("Fetch SBA Details")
+            if fetch_sba_details:
+                try:
+                    # Fetch and display SBA details
+                    bank_details = generate_complete_bank_details(cert_no_again, bank_name)
+                    st.subheader("Bank Detailed Statistics and Visualizations")
+                    st.table(bank_details['stats_table'])  # Displaying statistics table
+
+                    # Displaying graphs
+                    st.plotly_chart(bank_details['fig_total_loan_volume'])
+                    st.plotly_chart(bank_details['fig_loan_count'])
+                    st.plotly_chart(bank_details['fig_avg_loan_size'])
+                    st.plotly_chart(bank_details['fig_median_loan_size'])
+                except Exception as e:
+                    st.error(f"Failed to generate bank details: {str(e)}")
+
+                
+
 
 if __name__ == '__main__':
     main()
