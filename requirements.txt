@@ -3,4 +3,4 @@ pandas
 requests
 datetime
 fdicdata
-plotly==6.4.4
+plotly
